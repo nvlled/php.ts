@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run -A
 
 import {
-  ComponentChildren,
+  ComponentChildren as JSXChildren,
   Fragment,
   h,
   toString as renderToString,
@@ -14,14 +14,8 @@ import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
 
 const defaultPort = 3000;
 
-let bufferedOutput = "";
-let isOutputBuffered = false;
-
-export { Fragment, h };
-
-export type JSXElem = JSX.Element;
-
-export type JSXChildren = ComponentChildren;
+export { h, Fragment };
+export type { JSXChildren };
 
 export async function renderPage(
   page: JSX.Element | Promise<JSX.Element>
@@ -33,11 +27,36 @@ export async function renderPage(
 export async function $(page: JSX.Element | Promise<JSX.Element>) {
   page = await Promise.resolve(page);
   const output = renderToString(page);
-  if (isOutputBuffered) {
-    bufferedOutput = output;
-  } else {
-    console.log(output);
+  console.log(output);
+}
+
+const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
+
+// deno-lint-ignore no-namespace
+export namespace $ {
+  export interface ScriptRequest {
+    method: string;
+    url: string;
+    body: string;
+    data: Record<string, string>;
   }
+
+  export interface ScriptResponse {
+    status?: number;
+    statusText?: string;
+    headers: Record<string, string>;
+  }
+
+  export const request: ScriptRequest = {
+    method: "",
+    url: "",
+    body: "",
+    data: {},
+  };
+
+  export const response: ScriptResponse = {
+    headers: {},
+  };
 }
 
 const srcDir = "src";
@@ -84,6 +103,44 @@ const common = {
     );
     return outputDir + "/" + fields.slice(1).join("/");
   },
+
+  async loadRequestData() {
+    try {
+      const contents = await common.Uint8ArrayStreamToString(
+        Deno.stdin.readable
+      );
+      const req = JSON.parse(contents) as $.ScriptRequest;
+      if (req) {
+        $.request.method = req.method;
+        $.request.url = req.url;
+        $.request.data = req.data;
+        $.request.body = req.body;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  },
+
+  async Uint8ArrayStreamToString(
+    stream: ReadableStream<Uint8Array>
+  ): Promise<string> {
+    const result: string[] = [];
+    for await (const chunk of stream
+      .pipeThrough(new TextDecoderStream())
+      .values()) {
+      result.push(chunk);
+    }
+    return result.join("");
+  },
+
+  getRequestData(req: Request) {
+    const result: Record<string, string> = {};
+    for (const [k, v] of new URL(req.url).searchParams) {
+      result[k] = v;
+    }
+    //TODO: get req.formData
+    return result;
+  },
 };
 
 export const runner = {
@@ -99,35 +156,64 @@ export const runner = {
     }
   },
 
-  renderToString(pageFilename: string) {
+  async renderToString(pageFilename: string, requestData: $.ScriptRequest) {
+    // TODO: use MessagePack
     const command = new Deno.Command(Deno.execPath(), {
       args: ["run", "-A", pageFilename],
-      env: { NO_COLOR: "1" },
+      env: { NO_COLOR: "✓", PHP_TS_RENDER: "✓" },
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "piped",
     });
 
-    const { stderr, stdout } = command.outputSync();
-    const dec = new TextDecoder();
-    return { out: dec.decode(stdout), err: dec.decode(stderr) };
-  },
+    const { stdin, stdout, stderr } = command.spawn();
 
-  renderToFile(pageFilename: string, destPath: string) {
-    const command = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", pageFilename],
-      env: { NO_COLOR: "1" },
-    });
+    const w = stdin.getWriter();
+    await w.write(new TextEncoder().encode(JSON.stringify(requestData)));
+    w.close();
 
-    const { stdout, stderr } = command.outputSync();
+    let [out, err] = await Promise.all([
+      await common.Uint8ArrayStreamToString(stdout),
+      await common.Uint8ArrayStreamToString(stderr),
+    ]);
 
-    if (stdout.length > 0) {
-      Deno.writeFile(destPath, stdout);
-    } else {
-      console.log("no output", destPath);
+    let scriptResponse: $.ScriptResponse | null = null;
+
+    const index = out.indexOf(scriptOutputDelimiter);
+    if (index >= 0) {
+      const jsonStr = out.slice(index + scriptOutputDelimiter.length);
+      scriptResponse = JSON.parse(jsonStr);
+      out = out.slice(0, index);
     }
 
-    if (stderr.length > 0) {
-      console.log(pageFilename, "output");
-      console.log(new TextDecoder().decode(stderr));
+    return { out, err, scriptResponse };
+  },
+
+  async renderToFile(
+    pageFilename: string,
+    destPath: string,
+    requestData: $.ScriptRequest
+  ) {
+    const { out, err, scriptResponse } = await runner.renderToString(
+      pageFilename,
+      requestData
+    );
+
+    if (err.length > 0) {
+      console.log("error:");
+      console.log(err);
       console.log("------------------");
+    }
+
+    if (scriptResponse) {
+      console.log(scriptResponse);
+      console.log("------------------");
+    }
+
+    if (out.length > 0) {
+      Deno.writeTextFile(destPath, out);
+    } else {
+      console.log("no output", destPath);
     }
   },
 
@@ -136,7 +222,7 @@ export const runner = {
     Deno.removeSync(outputDir, { recursive: true });
   },
 
-  buildOne(srcPath: string, noCheck = false) {
+  async buildOne(srcPath: string, noCheck = false) {
     const destPath = common.getDestPath(srcPath);
 
     if (common.isFileNewer(srcPath, destPath) || noCheck) {
@@ -147,7 +233,19 @@ export const runner = {
         return "copied";
       } else {
         console.log("render", destPath);
-        runner.renderToFile(srcPath, destPath);
+        if (srcPath.startsWith(srcDir)) {
+          srcPath = srcPath.slice(srcDir.length);
+        }
+
+        const url = `http://localhost:${defaultPort}${srcPath}`;
+        const resp = await fetch(url);
+        const f = await Deno.open(destPath, {
+          create: true,
+          truncate: true,
+          write: true,
+        });
+        await resp.body?.pipeTo(f.writable);
+
         return "rendered";
       }
     } else {
@@ -155,7 +253,9 @@ export const runner = {
     }
   },
 
-  buildAll(noCheck = false) {
+  async buildAll(noCheck = false) {
+    const abortController = runner.serveDev(defaultPort);
+
     const result = {
       skipped: 0,
       rendered: 0,
@@ -163,10 +263,11 @@ export const runner = {
     };
     for (const entry of walkSync(srcDir)) {
       if (entry.isDirectory) continue;
-      const s = runner.buildOne(entry.path, noCheck);
+      const s = await runner.buildOne(entry.path, noCheck);
       result[s]++;
     }
     console.log("build status", result);
+    abortController.abort();
   },
 
   serve(port: number) {
@@ -192,40 +293,65 @@ export const runner = {
   },
 
   serveDev(port: number) {
-    Deno.serve({ port, hostname: "0.0.0.0" }, async (req) => {
-      try {
-        let pathname = new URL(req.url).pathname;
-        if (pathname === "/") {
-          pathname = "/index.html";
-        }
+    const abort = new AbortController();
+    Deno.serve(
+      { port, hostname: "0.0.0.0", signal: abort.signal },
+      async (req) => {
+        try {
+          let pathname = new URL(req.url).pathname;
+          if (pathname === "/") {
+            pathname = "/index.html";
+          }
 
-        if (!pathname.endsWith(".html")) {
-          const file = await Deno.open(srcDir + pathname, { read: true });
-          return new Response(file.readable);
-        }
+          if (!pathname.endsWith(".html") && !pathname.endsWith(".tsx")) {
+            const file = await Deno.open(srcDir + pathname, { read: true });
+            return new Response(file.readable);
+          }
 
-        const filename = common.getSrcPath(srcDir + pathname);
-        let { out, err } = runner.renderToString(filename);
-        if (err != "") {
-          out =
-            `<div style='white-space: pre-wrap; font-size: 33px;background: red; color'>ruh-oh\n${err}</div>` +
-            out;
-        }
+          const filename = common.getSrcPath(srcDir + pathname);
+          let { out, err, scriptResponse } = await runner.renderToString(
+            filename,
+            {
+              method: req.method,
+              url: req.url,
+              data: common.getRequestData(req),
+              body: req.body
+                ? await common.Uint8ArrayStreamToString(req.body)
+                : "",
+            } satisfies $.ScriptRequest
+          );
 
-        return new Response(out, {
-          headers: {
-            "Content-Type": "text/html",
-          },
-        });
-      } catch (e) {
-        if (e instanceof Deno.errors.NotFound) {
-          return new Response("not found", { status: 404 });
-        } else if (e instanceof Error) {
-          return new Response(e.message, { status: 500 });
+          if (err != "") {
+            out =
+              `<div style='white-space: pre-wrap; font-size: 33px;background: red; color'>ruh-oh\n${err}</div>` +
+              out;
+          }
+
+          if (scriptResponse) {
+            const respHeaders: Record<string, string> = {};
+            for (const [k, v] of Object.entries(scriptResponse.headers)) {
+              respHeaders[k] = v;
+            }
+
+            return new Response(out, {
+              headers: respHeaders,
+              statusText: scriptResponse.statusText,
+              status: scriptResponse.status,
+            });
+          }
+
+          return new Response(out);
+        } catch (e) {
+          if (e instanceof Deno.errors.NotFound) {
+            return new Response("not found", { status: 404 });
+          } else if (e instanceof Error) {
+            return new Response(e.message, { status: 500 });
+          }
+          return new Response("huh:" + e, { status: 500 });
         }
-        return new Response("huh:" + e, { status: 500 });
       }
-    });
+    );
+    return abort;
   },
 };
 
@@ -274,21 +400,26 @@ async function main() {
       runner.serveDev(port);
       break;
     case "serve":
-      runner.buildAll(!!(options.force_build || options.f));
       runner.serve(port);
       break;
-    case "render":
+
+    case "render": {
+      // TODO: use serveDev so that the request and response still works
       if (args.length <= 2) {
-        console.log(runner.renderToString(args[1] + "").out);
+        console.log((await runner.renderToString(args[1] + "", $.request)).out);
       } else {
         for (const filename of args.slice(1)) {
           console.log(
             `-------------------- output of ${filename} --------------------`
           );
-          console.log(runner.renderToString(filename + "").out);
+          console.log(
+            (await runner.renderToString(filename + "", $.request)).out
+          );
         }
       }
       break;
+    }
+
     case "test": {
       await import("./src/index.tsx");
       const mod = await import("./src/index.tsx");
@@ -299,4 +430,11 @@ async function main() {
 
 if (import.meta.main) {
   main();
+} else if (Deno.env.has("PHP_TS_RENDER")) {
+  await common.loadRequestData();
+
+  globalThis.addEventListener("unload", () => {
+    console.log(scriptOutputDelimiter);
+    console.log(JSON.stringify($.response));
+  });
 }

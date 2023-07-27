@@ -1,4 +1,4 @@
-import { $, JSXChildren, h } from "../php.ts";
+import { h, Fragment, $, JSXChildren } from "../php.ts";
 
 function Layout({ children }: { children: JSXChildren }) {
   return (
@@ -10,10 +10,15 @@ function Layout({ children }: { children: JSXChildren }) {
       <body>
         <h1>Example page with php.ts</h1>
         <div className="contents">{children}</div>
+        <div>x={$.request.data.x}</div>
       </body>
     </html>
   );
 }
+
+$.response.status = 203;
+$.response.statusText = "Okay";
+$.response.headers["Content-Type"] = "text/html";
 
 $(
   <Layout>
