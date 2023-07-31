@@ -1,6 +1,8 @@
-import { h, Fragment, $, JSXChildren } from "../php.ts";
+import { $ } from "../php.ts";
 
-function Layout({ children }: { children: JSXChildren }) {
+const { request } = $;
+
+function Layout({ children }: { children: $.JSXChildren }) {
   return (
     <html>
       <head>
@@ -10,7 +12,20 @@ function Layout({ children }: { children: JSXChildren }) {
       <body>
         <h1>Example page with php.ts</h1>
         <div className="contents">{children}</div>
-        <div>x={$.request.data.x}</div>
+        <h1 style={{ textAlign: "center" }}>
+          {request.data.name && `hello ${request.data.name}`}
+        </h1>
+        <form>
+          Enter your name: <input name="name" />
+        </form>
+        <br />
+        <a data-no-render href="index.tsx?name=Oran">
+          this link will not show on build
+        </a>
+        <br />
+        <a href="index.tsx?name=Kadode">this link will show on build</a>
+        <br />
+        <br />
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run -A
 
 import {
-  ComponentChildren as JSXChildren,
+  ComponentChildren,
   Fragment,
   h,
   toString as renderToString,
@@ -10,19 +10,14 @@ import {
 import { ensureFileSync } from "https://deno.land/std@0.193.0/fs/ensure_file.ts";
 import { walkSync } from "https://deno.land/std@0.193.0/fs/walk.ts";
 import { extname } from "https://deno.land/std@0.193.0/path/mod.ts";
+import { basename } from "https://deno.land/std@0.193.0/path/mod.ts";
+import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
 import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
+import { DOMParser } from "https://esm.sh/linkedom@0.14.22";
 
 const defaultPort = 3000;
 
-export { h, Fragment };
-export type { JSXChildren };
-
-export async function renderPage(
-  page: JSX.Element | Promise<JSX.Element>
-): Promise<string> {
-  page = await Promise.resolve(page);
-  return renderToString(page);
-}
+const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
 
 export async function $(page: JSX.Element | Promise<JSX.Element>) {
   page = await Promise.resolve(page);
@@ -30,10 +25,13 @@ export async function $(page: JSX.Element | Promise<JSX.Element>) {
   console.log(output);
 }
 
-const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
-
 // deno-lint-ignore no-namespace
 export namespace $ {
+  export const createElement = h;
+  export const createFragment = Fragment;
+
+  export type JSXChildren = ComponentChildren;
+
   export interface ScriptRequest {
     method: string;
     url: string;
@@ -60,7 +58,7 @@ export namespace $ {
 }
 
 const srcDir = "src";
-const outputDir = "build";
+const buildDir = "build";
 
 const common = {
   tryCatch<T>(fn: () => T): [T, null] | [null, Error] {
@@ -80,6 +78,7 @@ const common = {
     return (newStat.mtime ?? 1) > (olderStat.mtime ?? 1);
   },
   copyIfNewer(src: string, dest: string) {
+    ensureFileSync(dest);
     if (common.isFileNewer(src, dest)) {
       console.log("copy", dest);
       Deno.copyFileSync(src, dest);
@@ -101,7 +100,7 @@ const common = {
       /\.tsx/,
       ".html"
     );
-    return outputDir + "/" + fields.slice(1).join("/");
+    return buildDir + "/" + fields.slice(1).join("/");
   },
 
   async loadRequestData() {
@@ -140,6 +139,46 @@ const common = {
     }
     //TODO: get req.formData
     return result;
+  },
+
+  getStaticFilename(href: string) {
+    const extIndex = href.indexOf(".tsx");
+    const pathname = href.slice(0, extIndex);
+    const queryString = href.slice(extIndex + 4).trim();
+
+    if (queryString.length === 0) return pathname + ".html";
+    const searchParams = new URLSearchParams(queryString);
+
+    const entries: [string, string][] = [];
+    for (const [k, v] of searchParams.entries()) {
+      entries.push([k, v]);
+    }
+    entries.sort((a, b) => a[0].localeCompare(b[0]));
+
+    return (
+      pathname + "[" + entries.map(([k, v]) => `${k}=${v}`).join(",") + "].html"
+    );
+  },
+
+  getAndReplaceLocalLinks(
+    html: string,
+    domParser: DOMParser
+  ): [string[], string] {
+    const dom = domParser.parseFromString(html, "text/html");
+    const result: string[] = [];
+    for (const child of dom.querySelectorAll("a")) {
+      const a = child as { href: string; attributes: Record<string, string> };
+      if (!a.href.match(/^https?:\/\//) && !a.attributes["data-no-render"]) {
+        result.push(a.href);
+        a.href = common.getStaticFilename(a.href);
+      }
+    }
+    return [result, dom.toString()];
+  },
+
+  stripQueryParam(pathname: string) {
+    const i = pathname.lastIndexOf("?");
+    return i < 0 ? pathname : pathname.slice(0, i);
   },
 };
 
@@ -218,15 +257,14 @@ export const runner = {
   },
 
   cleanBuild() {
-    console.log("cleaning", outputDir);
-    Deno.removeSync(outputDir, { recursive: true });
+    console.log("cleaning", buildDir);
+    Deno.removeSync(buildDir, { recursive: true });
   },
 
   async buildOne(srcPath: string, noCheck = false) {
     const destPath = common.getDestPath(srcPath);
 
     if (common.isFileNewer(srcPath, destPath) || noCheck) {
-      ensureFileSync(destPath);
       if (extname(srcPath) !== ".tsx") {
         console.log("copy", destPath);
         Deno.copyFileSync(srcPath, destPath);
@@ -253,21 +291,113 @@ export const runner = {
     }
   },
 
+  async renderFetch(srcPath: string, destPath: string) {
+    console.log("render", destPath);
+    if (srcPath.startsWith(srcDir)) {
+      srcPath = srcPath.slice(srcDir.length);
+    }
+
+    const url = `http://localhost:${defaultPort}${srcPath}`;
+    const resp = await fetch(url);
+    const f = await Deno.open(destPath, {
+      create: true,
+      truncate: true,
+      write: true,
+    });
+    await resp.body?.pipeTo(f.writable);
+  },
+
   async buildAll(noCheck = false) {
-    const abortController = runner.serveDev(defaultPort);
+    const abortController = runner.serveDev(defaultPort, false);
 
     const result = {
       skipped: 0,
       rendered: 0,
       copied: 0,
     };
+
+    const buildSet = new Set<string>();
+    const files: string[] = [];
+    const invalidLinks = new Set<string>();
+
     for (const entry of walkSync(srcDir)) {
       if (entry.isDirectory) continue;
-      const s = await runner.buildOne(entry.path, noCheck);
-      result[s]++;
+
+      const destPath = common.getDestPath(entry.path);
+
+      if (!(common.isFileNewer(entry.path, destPath) || noCheck)) {
+        console.log("skip", destPath);
+        continue;
+      }
+
+      if (extname(entry.path) !== ".tsx") {
+        console.log("copy", destPath);
+        ensureFileSync(destPath);
+        console.log("copy", destPath);
+        Deno.copyFileSync(entry.path, destPath);
+        result["copied"]++;
+      } else {
+        files.push(entry.path);
+      }
     }
+
+    const { DOMParser } = await import("https://esm.sh/linkedom@0.14.22");
+
+    const domParser = new DOMParser();
+
+    while (files.length > 0) {
+      let pathname = files.pop() ?? "";
+      if (pathname.startsWith(srcDir)) {
+        pathname = pathname.slice(srcDir.length);
+      }
+      const outputFilename = buildDir + common.getStaticFilename(pathname);
+      if (buildSet.has(outputFilename)) continue;
+      buildSet.add(outputFilename);
+
+      await runner.renderFetch(pathname, outputFilename);
+      result["rendered"]++;
+
+      const html = await Deno.readTextFile(outputFilename);
+      const [links, updatedHtml] = common.getAndReplaceLocalLinks(
+        html,
+        domParser
+      );
+      Deno.writeTextFile(outputFilename, updatedHtml);
+      for (let link of links) {
+        if (!link.startsWith("/")) link = "/" + link;
+        const filename = srcDir + common.stripQueryParam(link);
+        if (!existsSync(filename)) {
+          invalidLinks.add(srcDir + link);
+          continue;
+        }
+        files.push(link);
+      }
+    }
+
+    if (invalidLinks.size > 0) {
+      const lines: string[] = [];
+      for (const l of invalidLinks) lines.push(l);
+      Deno.stderr.write(
+        new TextEncoder().encode("** invalid links: " + lines.join(", ") + "\n")
+      );
+    }
+
     console.log("build status", result);
     abortController.abort();
+  },
+
+  async runScript(srcPath: string) {
+    if (srcPath.startsWith(srcDir)) {
+      srcPath = srcPath.slice(srcDir.length);
+    }
+
+    const url = `http://localhost:${defaultPort}${srcPath}`;
+    const resp = await fetch(url);
+    await resp.body?.pipeTo(Deno.stdout.writable, {
+      preventAbort: true,
+      preventCancel: true,
+      preventClose: true,
+    });
   },
 
   serve(port: number) {
@@ -279,7 +409,7 @@ export const runner = {
           pathname = "/index.html";
         }
 
-        const file = await Deno.open(outputDir + pathname, { read: true });
+        const file = await Deno.open(buildDir + pathname, { read: true });
         return new Response(file.readable);
       } catch (e) {
         if (e instanceof Deno.errors.NotFound) {
@@ -292,10 +422,19 @@ export const runner = {
     });
   },
 
-  serveDev(port: number) {
+  serveDev(port: number, logHostname = true) {
     const abort = new AbortController();
     Deno.serve(
-      { port, hostname: "0.0.0.0", signal: abort.signal },
+      {
+        port,
+        hostname: "0.0.0.0",
+        signal: abort.signal,
+        onListen: () => {
+          if (logHostname) {
+            console.log(`listening on http://localhost:${port}`);
+          }
+        },
+      },
       async (req) => {
         try {
           let pathname = new URL(req.url).pathname;
@@ -309,6 +448,7 @@ export const runner = {
           }
 
           const filename = common.getSrcPath(srcDir + pathname);
+
           let { out, err, scriptResponse } = await runner.renderToString(
             filename,
             {
@@ -355,37 +495,53 @@ export const runner = {
   },
 };
 
-const cli = {
-  serve: {
-    desc: "start server",
-    options: {
-      "--port": "port number",
-    },
-  },
-  dev: {
-    desc: "start dev server",
-    options: {
-      "--port": "port number",
-    },
-  },
-  build: {
-    desc: "builds all tsx files to html",
-    options: {
-      "--src": "the source directory",
-      "--dest": "the destination directory",
-    },
-  },
-  render: {
-    desc: "renders a tsx to stdout",
-    args: ["...files"],
-  },
-};
+const cliHelp = `
+Commands
+------------------------------------------------------------------
+
+serve
+| description: start server for built html files and static assets
+| options:
+|  --port <port_number>
+
+dev
+| description: start development server
+| options:
+|  --port <port_number>
+
+build
+| description: Create html files from .tsx files and copy
+| all the static assets. Note, only newer files will be copied.
+| options:
+|  --force  Force to render and copy all files even if they are older.
+
+Examples
+------------------------------------------------------------------
+./php.ts build
+./php.ts build --force --port 8080
+./php.ts dev
+
+# same as above
+deno run -A php.ts dev 
+
+Directories
+------------------------------------------------------------------
+
+source files: src/
+| Put all your .tsx pages in here, other files like images
+| and css should also be placed in here.
+| Note: Your common files or libraries can be placed outside here.
+
+builld files: build/
+| This is where your html files will be written to.
+
+`;
 
 async function main() {
   const { _: args, ...options } = parseArgs(Deno.args);
   const command = args[0];
   if (!command) {
-    console.log(JSON.stringify(cli, null, 2));
+    console.log(cliHelp.trim());
     Deno.exit(0);
   }
 
@@ -403,20 +559,38 @@ async function main() {
       runner.serve(port);
       break;
 
-    case "render": {
-      // TODO: use serveDev so that the request and response still works
-      if (args.length <= 2) {
-        console.log((await runner.renderToString(args[1] + "", $.request)).out);
+    case "clean": {
+      Deno.removeSync(buildDir, { recursive: true });
+      console.log("cleaned", buildDir);
+      break;
+    }
+
+    case "run": {
+      const abortController = runner.serveDev(defaultPort, false);
+      if (args.length == 1) {
+        console.log(
+          "usage: ",
+          basename(import.meta.url),
+          "run",
+          "<page.tsx>",
+          "...[other page files]"
+        );
+      } else if (args.length === 2) {
+        await runner.runScript(args[1].toString());
       } else {
         for (const filename of args.slice(1)) {
+          if (!existsSync(filename.toString())) {
+            console.log("file not found:", filename.toString());
+            continue;
+          }
+
           console.log(
             `-------------------- output of ${filename} --------------------`
           );
-          console.log(
-            (await runner.renderToString(filename + "", $.request)).out
-          );
+          await runner.runScript(filename.toString());
         }
       }
+      abortController.abort();
       break;
     }
 
