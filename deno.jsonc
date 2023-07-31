@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "dom"
+    ],
     "jsx": "react",
     "jsxFactory": "$.createElement",
-    "jsxFragmentFactory": "$.createFragment"
+    "jsxFragmentFactory": "$.createElemenFragment"
   }
 }

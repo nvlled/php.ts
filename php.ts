@@ -19,6 +19,8 @@ const defaultPort = 3000;
 
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
 
+export { h, Fragment };
+
 export async function $(page: JSX.Element | Promise<JSX.Element>) {
   page = await Promise.resolve(page);
   const output = renderToString(page);

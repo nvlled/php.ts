@@ -12,14 +12,8 @@ function Layout({ children }: { children: $.JSXChildren }) {
       <body>
         <h1>Example page with php.ts</h1>
         <div className="contents">{children}</div>
-        <h1 style={{ textAlign: "center" }}>
-          {request.data.name && `hello ${request.data.name}`}
-        </h1>
-        <form>
-          Enter your name: <input name="name" />
-        </form>
         <br />
-        <a data-no-render href="index.tsx?name=Oran">
+        <a data-no-render href="index.tsx?name=Ouran">
           this link will not show on build
         </a>
         <br />
@@ -38,6 +32,22 @@ $.response.headers["Content-Type"] = "text/html";
 $(
   <Layout>
     <p>Here's an unrelated image.</p>
-    <img src="images/helck.png" />
+    <div style={{ position: "relative" }}>
+      <h1
+        style={{
+          textAlign: "center",
+          width: "100%",
+          position: "absolute",
+          top: "0",
+          color: "#425192",
+        }}
+      >
+        {request.data.name && `Hey ${request.data.name}`}
+      </h1>
+      <img src="images/helck.png" />
+    </div>
+    <form>
+      Enter your name: <input name="name" value={request.data.name ?? ""} />
+    </form>
   </Layout>
 );
