@@ -13,7 +13,6 @@ import { extname } from "https://deno.land/std@0.193.0/path/mod.ts";
 import { basename } from "https://deno.land/std@0.193.0/path/mod.ts";
 import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
 import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
-import { DOMParser } from "https://esm.sh/linkedom@0.14.22";
 
 const defaultPort = 3000;
 
@@ -144,11 +143,17 @@ const common = {
   },
 
   getStaticFilename(href: string) {
+    if (href.endsWith("/")) {
+      href += "index.tsx";
+    }
+
     const extIndex = href.indexOf(".tsx");
     const pathname = href.slice(0, extIndex);
     const queryString = href.slice(extIndex + 4).trim();
 
-    if (queryString.length === 0) return pathname + ".html";
+    if (queryString.length === 0) {
+      return pathname + ".html";
+    }
     const searchParams = new URLSearchParams(queryString);
 
     const entries: [string, string][] = [];
@@ -164,7 +169,7 @@ const common = {
 
   getAndReplaceLocalLinks(
     html: string,
-    domParser: DOMParser
+    domParser: { parseFromString: any }
   ): [string[], string] {
     const dom = domParser.parseFromString(html, "text/html");
     const result: string[] = [];
