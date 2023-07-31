@@ -1,4 +1,4 @@
-import { $ } from "../php.ts";
+import { $ } from "$base/php.ts";
 
 $.response.statusText = "go there";
 $.response.status = 302;

@@ -1,4 +1,4 @@
-import { $ } from "../php.ts";
+import { $ } from "$base/php.ts";
 export function Layout({ children }: { children: $.JSXChildren }) {
   return (
     <html>

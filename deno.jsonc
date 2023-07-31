@@ -1,11 +1,14 @@
 {
+  "imports": {
+    "$base/": "./"
+  },
   "compilerOptions": {
     "lib": [
-      "deno.window",
-      "dom"
+      "dom",
+      "deno.window"
     ],
     "jsx": "react",
     "jsxFactory": "$.createElement",
-    "jsxFragmentFactory": "$.createElemenFragment"
+    "jsxFragmentFactory": "$.createFragment"
   }
 }

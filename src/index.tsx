@@ -1,4 +1,4 @@
-import { $ } from "../php.ts";
+import { $ } from "$base/php.ts";
 import { Layout } from "./common.tsx";
 
 const { request } = $;

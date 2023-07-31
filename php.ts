@@ -476,18 +476,26 @@ export const runner = {
 
           if (scriptResponse) {
             const respHeaders: Record<string, string> = {};
+            let hasHeader = false;
             for (const [k, v] of Object.entries(scriptResponse.headers)) {
               respHeaders[k] = v;
+              hasHeader = true;
             }
 
             return new Response(out, {
-              headers: respHeaders,
-              statusText: scriptResponse.statusText,
-              status: scriptResponse.status,
+              headers: hasHeader
+                ? respHeaders
+                : { "Content-Type": "text/html" },
+              statusText: scriptResponse.statusText ?? "OK",
+              status: scriptResponse.status ?? 200,
             });
           }
 
-          return new Response(out);
+          return new Response(out, {
+            headers: { "Content-Type": "text/html" },
+            statusText: "OK",
+            status: 200,
+          });
         } catch (e) {
           if (e instanceof Deno.errors.NotFound) {
             return new Response("not found", { status: 404 });
@@ -506,15 +514,19 @@ const cliHelp = `
 Commands
 ------------------------------------------------------------------
 
-serve
-| description: start server for built html files and static assets
-| options:
-|  --port <port_number>
+init
+| description: initializes or creates your deno.json and a sample page
 
 dev
 | description: start development server
 | options:
 |  --port <port_number>
+
+serve
+| description: start server for built html files and static assets
+| options:
+|  --port <port_number>
+
 
 build
 | description: Create html files from .tsx files and copy
@@ -556,19 +568,70 @@ async function main() {
   if (isNaN(port)) port = defaultPort;
 
   switch (command) {
-    case "build":
+    case "build": {
       runner.buildAll(!!(options.force_build || options.f));
       break;
-    case "dev":
+    }
+
+    case "dev": {
       runner.serveDev(port);
       break;
-    case "serve":
+    }
+
+    case "serve": {
       runner.serve(port);
       break;
+    }
 
     case "clean": {
       Deno.removeSync(buildDir, { recursive: true });
       console.log("cleaned", buildDir);
+      break;
+    }
+
+    case "init": {
+      let configFile = "deno.jsonc";
+      if (existsSync("deno.json")) {
+        configFile = "deno.json";
+      }
+
+      let config: any = {};
+      try {
+        config = JSON.parse(Deno.readTextFileSync(configFile));
+      } catch (e) {
+        /* do nothing */
+      }
+
+      if (!config.imports) config.imports = {};
+      if (!config.compilerOptions) config.compilerOptions = {};
+      if (!config.compilerOptions.lib) config.compilerOptions.lib = [];
+
+      config.imports["$base/"] = "./";
+
+      config.compilerOptions.jsx = "react";
+      config.compilerOptions.jsxFactory = "$.createElement";
+      config.compilerOptions.jsxFragmentFactory = "$.createFragment";
+
+      const { lib } = config.compilerOptions;
+      if (lib.indexOf("dom") < 0) lib.push("dom");
+      if (lib.indexOf("deno.window") < 0) lib.push("deno.window");
+
+      Deno.writeTextFileSync(configFile, JSON.stringify(config, null, 2));
+      console.log("Created or updated", configFile);
+
+      Deno.mkdirSync(srcDir, { recursive: true });
+      const indexFile = srcDir + "/index.tsx";
+      if (!existsSync(indexFile)) {
+        Deno.writeTextFileSync(
+          indexFile,
+          `
+import { $ } from "$base/php.ts";
+$(<marquee>ready for takeoff</marquee>);
+        `
+        );
+        console.log("created file", indexFile);
+      }
+
       break;
     }
 
