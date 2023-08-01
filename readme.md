@@ -48,7 +48,7 @@ for actual projects, for me at least.
 ## Setup and Installation
 
 1. `$ mkdir your-site-name; cd your-site-name`
-2. `$ deno run https://deno.land/x/php.ts init`
+2. `$ deno run https://deno.land/x/php_ts/php.ts init`
    Alternatively, you can just manually download php.ts,
    `chmod +x` it, then run `./php init`
 3. `$ ./php --help` to see help contents
