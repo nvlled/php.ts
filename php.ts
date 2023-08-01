@@ -681,6 +681,22 @@ async function main() {
     }
 
     case "init": {
+      const vscodeSettingsFile = ".vscode/settings.json";
+
+      ensureFileSync(vscodeSettingsFile);
+      let vscodeSettings: any = {};
+      try {
+        vscodeSettings = JSON.parse(Deno.readTextFileSync(vscodeSettingsFile));
+      } catch (e) {
+        /* do nothing */
+      }
+      vscodeSettings["deno.enable"] = true;
+      Deno.writeTextFileSync(
+        vscodeSettingsFile,
+        JSON.stringify(vscodeSettings, null, 2)
+      );
+      console.log("enabled deno on", vscodeSettingsFile);
+
       let configFile = "deno.jsonc";
       if (existsSync("deno.json")) {
         configFile = "deno.json";
