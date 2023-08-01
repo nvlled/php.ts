@@ -17,6 +17,7 @@ import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
 const defaultPort = 3000;
 
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
+const watchFsPath = "$__WATCHFS__";
 
 export { h, Fragment };
 
@@ -60,6 +61,8 @@ export namespace $ {
 
 const srcDir = "src";
 const buildDir = "build";
+
+let fsWatcher: ReturnType<typeof common.createFileWatcher> | null = null;
 
 const common = {
   tryCatch<T>(fn: () => T): [T, null] | [null, Error] {
@@ -186,6 +189,80 @@ const common = {
   stripQueryParam(pathname: string) {
     const i = pathname.lastIndexOf("?");
     return i < 0 ? pathname : pathname.slice(0, i);
+  },
+
+  createFileWatcher() {
+    let idCounter = 0;
+    type Listener = (paths: string[]) => void;
+    const listeners = new Map<number, Listener>();
+    let running = true;
+
+    (async () => {
+      console.log("starting file watcher");
+      for await (const e of Deno.watchFs(srcDir, { recursive: true })) {
+        if (e.kind === "create" || e.kind === "modify") {
+          for (const [_, fn] of listeners.entries()) {
+            fn(e.paths);
+          }
+        }
+        if (!running) break;
+      }
+    })();
+
+    return {
+      stop() {
+        running = false;
+        for (const [id] of listeners.entries()) listeners.delete(id);
+      },
+      listen(fn: Listener) {
+        const id = ++idCounter;
+        listeners.set(id, fn);
+        return id;
+      },
+      unlisten(id: number) {
+        listeners.delete(id);
+      },
+    };
+  },
+
+  createFsEventResponse() {
+    let timer: number | undefined = undefined;
+    const enc = new TextEncoder();
+    let fsWatchID: number | null = null;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        timer = setInterval(() => {
+          controller.enqueue(enc.encode(`event: ping\n\n`));
+        }, 5 * 1000);
+
+        if (!fsWatcher) {
+          fsWatcher = common.createFileWatcher();
+        }
+
+        fsWatchID = fsWatcher?.listen((filenames: string[]) => {
+          controller.enqueue(
+            enc.encode(
+              "event: fsevent\n" + `data: {filename: "${filenames}"}\n\n`
+            )
+          );
+        });
+      },
+      cancel() {
+        if (timer !== undefined) {
+          clearInterval(timer);
+        }
+        if (fsWatchID) {
+          fsWatcher?.unlisten(fsWatchID);
+        }
+      },
+    });
+
+    return new Response(body, {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/event-stream",
+      },
+    });
   },
 };
 
@@ -410,7 +487,6 @@ export const runner = {
   serve(port: number) {
     Deno.serve({ port, hostname: "0.0.0.0" }, async (req) => {
       try {
-        console.log("serve request", req);
         let pathname = new URL(req.url).pathname;
         if (pathname === "/") {
           pathname = "/index.html";
@@ -443,8 +519,13 @@ export const runner = {
         },
       },
       async (req) => {
+        console.log(req.method, req.url);
         try {
           let pathname = new URL(req.url).pathname;
+          if (pathname === "/" + watchFsPath) {
+            return common.createFsEventResponse();
+          }
+
           if (pathname === "/") {
             pathname = "/index.html";
           }
@@ -467,6 +548,16 @@ export const runner = {
                 : "",
             } satisfies $.ScriptRequest
           );
+
+          out += `
+<script>
+var evtSource = new EventSource("${watchFsPath}");
+evtSource.addEventListener("fsevent", (event) => {
+  console.log("aha", event);
+  window.location.reload();
+});
+</script>
+          `;
 
           if (err != "") {
             out =
@@ -624,10 +715,11 @@ async function main() {
       if (!existsSync(indexFile)) {
         Deno.writeTextFileSync(
           indexFile,
-          `
-import { $ } from "$base/php.ts";
-$(<marquee>ready for takeoff</marquee>);
-        `
+          `import { $ } from "$base/php.ts";
+           $(<marquee>ready for takeoff</marquee>);`
+            .split("\n")
+            .map((l) => l.trim())
+            .join("\n")
         );
         console.log("created file", indexFile);
       }

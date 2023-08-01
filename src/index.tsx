@@ -24,16 +24,16 @@ $(
       </h1>
       <img src="images/helck.png" />
     </div>
-    <form>
+    <form style={{ textAlign: "center" }}>
       Enter your name: <input name="name" value={request.data.name ?? ""} />
     </form>
 
     <br />
     <a data-no-render href="index.tsx?name=Ouran">
-      this link will not show on build
+      this link will not work on build
     </a>
     <br />
-    <a href="index.tsx?name=Kadode">this link will show on build</a>
+    <a href="index.tsx?name=Kadode">this link will work on build</a>
     <br />
     <br />
   </Layout>
