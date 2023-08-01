@@ -626,7 +626,7 @@ builld files: build/
 async function main() {
   const { _: args, ...options } = parseArgs(Deno.args);
   const command = args[0];
-  if (!command) {
+  if (!command || options.help || options.h) {
     console.log(cliHelp.trim());
     Deno.exit(0);
   }
@@ -659,6 +659,19 @@ async function main() {
     }
 
     case "init": {
+      if (!existsSync("./php.ts")) {
+        const filename = "php.ts";
+        const data = await fetch(import.meta.url);
+        const file = await Deno.open(filename, {
+          create: true,
+          truncate: true,
+          write: true,
+        });
+        data.body?.pipeTo(file.writable);
+        Deno.chmod(filename, 0o755);
+        console.log("created file:", filename);
+      }
+
       const vscodeSettingsFile = ".vscode/settings.json";
 
       ensureFileSync(vscodeSettingsFile);
