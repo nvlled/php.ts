@@ -7,12 +7,12 @@ import {
   toString as renderToString,
 } from "https://deno.land/x/jsx_to_string@v0.1.2/mod.ts";
 
-import { ensureFileSync } from "https://deno.land/std@0.193.0/fs/ensure_file.ts";
-import { walkSync } from "https://deno.land/std@0.193.0/fs/walk.ts";
-import { extname } from "https://deno.land/std@0.193.0/path/mod.ts";
-import { basename } from "https://deno.land/std@0.193.0/path/mod.ts";
+import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
+import { walkSync } from "https://deno.land/std@0.196.0/fs/walk.ts";
+import { extname } from "https://deno.land/std@0.196.0/path/mod.ts";
+import { basename } from "https://deno.land/std@0.196.0/path/mod.ts";
 import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
-import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
+import { parse as parseArgs } from "https://deno.land/std@0.196.0/flags/mod.ts";
 
 const defaultPort = 3000;
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
