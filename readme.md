@@ -1,8 +1,8 @@
 # php.ts
 
-php.ts is static site generator with a development workflow
+php.ts is [deno](https://deno.land) static site generator with a development workflow
 similar to [PHP](https://php.net), but with typesafe JSX
-and comes all the tooling that comes with deno and javascript ecosystem.
+and all the tooling that comes with deno and javascript ecosystem.
 
 ```tsx
 $(
@@ -45,12 +45,12 @@ More seriously, despite my initial intention,
 I do believe php.ts did turn out to be quite useable
 for actual projects, for me at least.
 
-## Setup CLI
+## Setup and Installation
 
-1. Download and place php.ts to an empty folder (and `chmod +x` it)
-2. $ ./php.ts init
-3. $ ./php.ts dev
+1. `$ mkdir your-site-name; cd your-site-name`
+2. `$ deno run https://deno.land/x/php.ts init`
+   Alternatively, you can just manually download php.ts,
+   `chmod +x` it, then run `./php init`
+3. `$ ./php --help` to see help contents
 
-## Setup editor
-
-TODO
+Then take a quick glance on the [documentation](documentation.md).

@@ -723,7 +723,7 @@ async function main() {
         Deno.writeTextFileSync(
           indexFile,
           `import { $ } from "$base/php.ts";
-           $(<marquee>ready for takeoff</marquee>);`
+           $(<marquee style="font-size: 50px">ready for takeoff</marquee>);`
             .split("\n")
             .map((l) => l.trim())
             .join("\n")
