@@ -15,9 +15,9 @@ import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
 import { parse as parseArgs } from "https://deno.land/std@0.193.0/flags/mod.ts";
 
 const defaultPort = 3000;
-
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
 const watchFsPath = "$__WATCHFS__";
+let pageAutoReload = true;
 
 export { h, Fragment };
 
@@ -383,6 +383,7 @@ export const runner = {
 
     const url = `http://localhost:${defaultPort}${srcPath}`;
     const resp = await fetch(url);
+    ensureFileSync(destPath);
     const f = await Deno.open(destPath, {
       create: true,
       truncate: true,
@@ -522,7 +523,7 @@ export const runner = {
         console.log(req.method, req.url);
         try {
           let pathname = new URL(req.url).pathname;
-          if (pathname === "/" + watchFsPath) {
+          if (pathname === "/" + watchFsPath && pageAutoReload) {
             return common.createFsEventResponse();
           }
 
@@ -549,15 +550,18 @@ export const runner = {
             } satisfies $.ScriptRequest
           );
 
-          out += `
+          if (pageAutoReload) {
+            out += `
 <script>
+// This is an injected page autoreload script.
+// You can disable this on dev with --no-autoreload
 var evtSource = new EventSource("${watchFsPath}");
 evtSource.addEventListener("fsevent", (event) => {
   console.log("aha", event);
   window.location.reload();
 });
-</script>
-          `;
+</script>`;
+          }
 
           if (err != "") {
             out =
@@ -612,6 +616,8 @@ dev
 | description: start development server
 | options:
 |  --port <port_number>
+|  --no-autoreload
+|    disables page autoreload
 
 serve
 | description: start server for built html files and static assets
@@ -657,6 +663,8 @@ async function main() {
 
   let port = parseInt(options.port, 10);
   if (isNaN(port)) port = defaultPort;
+
+  pageAutoReload = command === "dev" && !options["no-autoreload"];
 
   switch (command) {
     case "build": {
