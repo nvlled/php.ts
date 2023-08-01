@@ -345,36 +345,6 @@ export const runner = {
     Deno.removeSync(buildDir, { recursive: true });
   },
 
-  async buildOne(srcPath: string, noCheck = false) {
-    const destPath = common.getDestPath(srcPath);
-
-    if (common.isFileNewer(srcPath, destPath) || noCheck) {
-      if (extname(srcPath) !== ".tsx") {
-        console.log("copy", destPath);
-        Deno.copyFileSync(srcPath, destPath);
-        return "copied";
-      } else {
-        console.log("render", destPath);
-        if (srcPath.startsWith(srcDir)) {
-          srcPath = srcPath.slice(srcDir.length);
-        }
-
-        const url = `http://localhost:${defaultPort}${srcPath}`;
-        const resp = await fetch(url);
-        const f = await Deno.open(destPath, {
-          create: true,
-          truncate: true,
-          write: true,
-        });
-        await resp.body?.pipeTo(f.writable);
-
-        return "rendered";
-      }
-    } else {
-      return "skipped";
-    }
-  },
-
   async renderFetch(srcPath: string, destPath: string) {
     console.log("render", destPath);
     if (srcPath.startsWith(srcDir)) {
