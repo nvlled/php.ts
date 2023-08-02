@@ -119,8 +119,8 @@ const common = {
         $.request.data = req.data;
         $.request.body = req.body;
       }
-    } catch (e) {
-      console.log(e);
+    } catch (_) {
+      /* ignore */
     }
   },
 
@@ -526,10 +526,10 @@ export const runner = {
 // This is an injected page autoreload script.
 // You can disable this on dev with --no-autoreload
 var evtSource = new EventSource("${watchFsPath}");
-evtSource.addEventListener("fsevent", (event) => {
-  console.log("aha", event);
+evtSource.addEventListener("fsevent", function(event) {
   window.location.reload();
 });
+window.addEventListener("unload", function() { evtSource.close(); })
 </script>`;
           }
 
