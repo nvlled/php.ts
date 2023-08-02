@@ -1,11 +1,10 @@
 #!/usr/bin/env -S deno run -A
 
 import {
-  ComponentChildren,
   Fragment,
   h,
   toString as renderToString,
-} from "https://deno.land/x/jsx_to_string@v0.1.2/mod.ts";
+} from "https://deno.land/x/jsx_to_string@v0.2.0/mod.ts";
 
 import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
 import { walkSync } from "https://deno.land/std@0.196.0/fs/walk.ts";
@@ -31,8 +30,6 @@ export async function $(page: JSX.Element | Promise<JSX.Element>) {
 export namespace $ {
   export const createElement = h;
   export const createFragment = Fragment;
-
-  export type JSXChildren = ComponentChildren;
 
   export interface ScriptRequest {
     method: string;
