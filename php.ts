@@ -763,10 +763,8 @@ async function main() {
       break;
     }
 
-    case "test": {
-      await import("./src/index.tsx");
-      const mod = await import("./src/index.tsx");
-      console.log(mod);
+    default: {
+      console.log("invalid command:", command);
     }
   }
 }
