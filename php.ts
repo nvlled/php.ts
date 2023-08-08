@@ -4,7 +4,7 @@ import {
   Fragment,
   h,
   toString as renderToString,
-} from "https://deno.land/x/jsx_to_string@v0.2.0/mod.ts";
+} from "https://deno.land/x/jsx_to_string@v0.3.0/mod.ts";
 
 import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
 import { walkSync } from "https://deno.land/std@0.196.0/fs/walk.ts";
