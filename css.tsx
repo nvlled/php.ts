@@ -1,4 +1,5 @@
-import { $ } from "./php.ts";
+/** @jsx h */
+import { h } from "https://deno.land/x/jsx_to_string@v0.3.0/mod.ts";
 
 const cssRaw = (strings: TemplateStringsArray) => strings.raw.join("");
 cssRaw.id = "";
