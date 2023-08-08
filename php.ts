@@ -142,17 +142,22 @@ const common = {
     return result;
   },
 
-  getStaticFilename(href: string) {
+  getStaticPath(href: string, includeHash = false) {
     if (href.endsWith("/")) {
       href += "index.tsx";
     }
 
     const extIndex = href.indexOf(".tsx");
+    const hashIndex = href.indexOf("#");
     const pathname = href.slice(0, extIndex);
-    const queryString = href.slice(extIndex + 4).trim();
+    const queryString = href
+      .slice(extIndex + 4, hashIndex < 0 ? undefined : hashIndex)
+      .trim();
+
+    const suffix = includeHash && hashIndex >= 0 ? href.slice(hashIndex) : "";
 
     if (queryString.length === 0) {
-      return pathname + ".html";
+      return pathname + ".html" + suffix;
     }
     const searchParams = new URLSearchParams(queryString);
 
@@ -163,7 +168,11 @@ const common = {
     entries.sort((a, b) => a[0].localeCompare(b[0]));
 
     return (
-      pathname + "[" + entries.map(([k, v]) => `${k}=${v}`).join(",") + "].html"
+      pathname +
+      "[" +
+      entries.map(([k, v]) => `${k}=${v}`).join(",") +
+      "].html" +
+      suffix
     );
   },
 
@@ -177,7 +186,7 @@ const common = {
       const a = child as { href: string; attributes: Record<string, string> };
       if (!a.href.match(/^https?:\/\//) && !a.attributes["data-no-render"]) {
         result.push(a.href);
-        a.href = common.getStaticFilename(a.href);
+        a.href = common.getStaticPath(a.href, true);
       }
     }
     return [result, dom.toString()];
@@ -402,7 +411,7 @@ export const runner = {
       if (pathname.startsWith(srcDir)) {
         pathname = pathname.slice(srcDir.length);
       }
-      const outputFilename = buildDir + common.getStaticFilename(pathname);
+      const outputFilename = buildDir + common.getStaticPath(pathname, false);
       if (buildSet.has(outputFilename)) continue;
       buildSet.add(outputFilename);
 
