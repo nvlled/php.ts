@@ -1,4 +1,5 @@
 #!/usr/bin/env -S deno run -A
+// version: v0.2.0
 
 import {
   Fragment,

@@ -1,8 +1,11 @@
 import { $ } from "$base/php.ts";
+import { createStyle } from "$base/css.tsx";
 import { Layout } from "./common.tsx";
 
+const css = createStyle({ scoped: true });
 const { request } = $;
 
+// these are optional
 $.response.status = 203;
 $.response.statusText = "Okay";
 $.response.headers["Content-Type"] = "text/html";
@@ -36,5 +39,22 @@ $(
     <a href="index.tsx?name=Kadode">this link will work on build</a>
     <br />
     <br />
+    <div id={css.id}>
+      some blue box &nbsp;
+      <div className="box" />
+      {css`
+        $base {
+          display: flex;
+          align-items: center;
+        }
+        $base .box {
+          width: 50px;
+          height: 50px;
+          background: blue;
+          display: inline-block;
+        }
+      `}
+    </div>
+    <div className="box">{/* this one will not be styled */}</div>
   </Layout>
 );
