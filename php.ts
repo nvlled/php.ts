@@ -673,13 +673,14 @@ export async function main() {
     case "init": {
       if (!existsSync("./php.ts")) {
         const filename = "php.ts";
-        const data = await fetch(import.meta.url);
-        const file = await Deno.open(filename, {
-          create: true,
-          truncate: true,
-          write: true,
-        });
-        data.body?.pipeTo(file.writable);
+        Deno.writeTextFileSync(
+          filename,
+          `
+#!/usr/bin/env -S deno run -A
+import {main} from "php.ts";
+main();
+        `.trim()
+        );
         Deno.chmod(filename, 0o755);
         console.log("created file:", filename);
       }
@@ -717,6 +718,7 @@ export async function main() {
       if (!config.compilerOptions.lib) config.compilerOptions.lib = [];
 
       config.imports["$base/"] = "./";
+      config.imports["php.ts"] = import.meta.url;
 
       config.compilerOptions.jsx = "react";
       config.compilerOptions.jsxFactory = "$.createElement";
@@ -734,7 +736,7 @@ export async function main() {
       if (!existsSync(indexFile)) {
         Deno.writeTextFileSync(
           indexFile,
-          `import { $ } from "$base/php.ts";
+          `import { $ } from "php.ts";
            $(<marquee style="font-size: 50px">ready for takeoff</marquee>);`
             .split("\n")
             .map((l) => l.trim())

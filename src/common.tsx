@@ -1,5 +1,5 @@
 import { $ } from "$base/php.ts";
-export function Layout({ children }: { children: $.JSXChildren }) {
+export function Layout({ children }: { children: JSX.Children }) {
   return (
     <html>
       <head>

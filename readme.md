@@ -20,13 +20,13 @@ console.log(`<p>query parameter value of x: ${$.request.data.x}</p>`);
 The development process is very similar to the goodbad ole days
 of early PHP sites:
 
-0. start dev server: `$ php.ts dev`
+0. start dev server: `$ ./php.ts dev`
 1. create a page (example.tsx)
 2. view in browser (http://localhost:3000/example.tsx)
 3. edit page
 4. refresh page in browser
 5. goto 3 if not yet done
-6. generate html files: `$ php.ts build`
+6. generate html files: `$ ./php.ts build`
 7. push html files to repository or server
 
 ## But why?
@@ -51,6 +51,6 @@ for actual projects, for me at least.
 2. `$ deno run https://deno.land/x/php_ts/php.ts init`
    Alternatively, you can just manually download php.ts,
    `chmod +x` it, then run `./php init`
-3. `$ ./php --help` to see help contents
+3. `$ ./php.ts --help` to see help contents
 
 Then take a quick glance on the [documentation](documentation.md).
