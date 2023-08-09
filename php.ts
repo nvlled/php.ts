@@ -1,5 +1,4 @@
 #!/usr/bin/env -S deno run -A
-// version: v0.2.1
 
 import {
   Fragment,
@@ -273,7 +272,7 @@ const common = {
   },
 };
 
-export const runner = {
+const runner = {
   render() {
     for (const filename of Deno.args) {
       const command = new Deno.Command(Deno.execPath(), {
@@ -542,7 +541,7 @@ window.addEventListener("unload", function() { evtSource.close(); })
 
           if (err != "") {
             out =
-              `<div style='white-space: pre-wrap; font-size: 33px;background: red; color'>ruh-oh\n${err}</div>` +
+              `<div style='white-space: pre-wrap; font-size: 33px;background:red; padding: 5px;'>ruh-oh: ${err}</div>` +
               out;
           }
 
@@ -630,7 +629,13 @@ builld files: build/
 
 `;
 
-async function main() {
+const isPageRender = Deno.env.has("PHP_TS_RENDER");
+
+export async function main() {
+  if (isPageRender) {
+    throw "main() should not be called from page modules";
+  }
+
   const { _: args, ...options } = parseArgs(Deno.args);
   const command = args[0];
   if (!command || options.help || options.h) {
@@ -778,7 +783,7 @@ async function main() {
 
 if (import.meta.main) {
   main();
-} else if (Deno.env.has("PHP_TS_RENDER")) {
+} else if (isPageRender) {
   await common.loadRequestData();
 
   globalThis.addEventListener("unload", () => {
