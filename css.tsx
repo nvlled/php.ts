@@ -27,6 +27,9 @@ $base will replaced with a generated ID.
 If {scoped:false}, then css just returns the string parameter as is.
 </div>
 */
+
+let counter = 0;
+
 export const createStyle = ({
   scoped = false,
   placeholder = "$base",
@@ -35,7 +38,7 @@ export const createStyle = ({
     return cssRaw;
   }
 
-  const id = "comp__" + Date.now().toString(36);
+  const id = "comp__" + ++counter;
   const fn = (strings: TemplateStringsArray) => {
     const s = strings.raw.join("");
     return <style>{s.replaceAll(placeholder, "#" + id)}</style>;
