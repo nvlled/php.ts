@@ -19,7 +19,7 @@ let rootPath = "/";
 const defaultPort = 3000;
 
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
-const watchFsPath = "$__WATCHFS__";
+const watchFsPath = ".watch-fs-events.json";
 let pageAutoReload = true;
 
 export { h, Fragment };
@@ -154,14 +154,7 @@ const common = {
   },
 
   joinPaths(...paths: string[]) {
-    return paths
-      .filter(Boolean)
-      .map((p, i) => {
-        if (i > 0) p = common.trimSlashStart(p);
-        if (i < paths.length - 1) p = common.trimSlashEnd(p);
-        return p;
-      })
-      .join("/");
+    return paths.join("/").replaceAll(/\/+/g, "/");
   },
 
   getStaticPath(href: string, includeHash = false) {
@@ -630,21 +623,21 @@ const runner = {
       async (req) => {
         console.log(req.method, req.url);
         try {
-          let pathname = new URL(req.url).pathname;
+          const pathname = new URL(req.url).pathname;
           if (pathname === "/" + watchFsPath && pageAutoReload) {
             return common.createFsEventResponse();
           }
 
-          if (pathname === "/") {
-            pathname = "/index.html";
+          let filename = srcDir + pathname;
+          const isDir = (await Deno.stat(filename)).isDirectory;
+          if (pathname === "/" || isDir) {
+            filename = common.joinPaths(srcDir, pathname, "index.tsx");
           }
 
-          if (!pathname.endsWith(".html") && !pathname.endsWith(".tsx")) {
-            const file = await Deno.open(srcDir + pathname, { read: true });
+          if (!filename.endsWith(".html") && !filename.endsWith(".tsx")) {
+            const file = await Deno.open(filename, { read: true });
             return new Response(file.readable);
           }
-
-          const filename = common.getSrcPath(srcDir + pathname);
 
           let { out, err, scriptResponse } = await runner.renderToString(
             filename,
@@ -663,7 +656,7 @@ const runner = {
 <script>
 // This is an injected page autoreload script.
 // You can disable this on dev with --no-autoreload
-var evtSource = new EventSource("${watchFsPath}");
+var evtSource = new EventSource("/${watchFsPath}");
 evtSource.addEventListener("fsevent", function(event) {
   window.location.reload();
 });
