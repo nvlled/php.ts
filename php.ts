@@ -6,14 +6,18 @@ import {
   toString as renderToString,
 } from "https://deno.land/x/jsx_to_string@v0.3.0/mod.ts";
 
-import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
-import { walkSync } from "https://deno.land/std@0.196.0/fs/walk.ts";
-import { extname } from "https://deno.land/std@0.196.0/path/mod.ts";
-import { basename } from "https://deno.land/std@0.196.0/path/mod.ts";
-import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
 import { parse as parseArgs } from "https://deno.land/std@0.196.0/flags/mod.ts";
+import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
+import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
+import {
+  extname,
+  basename,
+  join,
+} from "https://deno.land/std@0.196.0/path/mod.ts";
 
+let rootPath = "/";
 const defaultPort = 3000;
+
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
 const watchFsPath = "$__WATCHFS__";
 let pageAutoReload = true;
@@ -142,12 +146,34 @@ const common = {
     return result;
   },
 
+  trimSlashStart(path: string) {
+    return path.startsWith("/") ? path.slice(1) : path;
+  },
+  trimSlashEnd(path: string) {
+    return path.endsWith("/") ? path.slice(0, path.length - 1) : path;
+  },
+
+  joinPaths(...paths: string[]) {
+    return paths
+      .filter(Boolean)
+      .map((p, i) => {
+        if (i > 0) p = common.trimSlashStart(p);
+        if (i < paths.length - 1) p = common.trimSlashEnd(p);
+        return p;
+      })
+      .join("/");
+  },
+
   getStaticPath(href: string, includeHash = false) {
     if (href.endsWith("/")) {
       href += "index.tsx";
     }
 
     const extIndex = href.indexOf(".tsx");
+    if (extIndex < 0) {
+      return href;
+    }
+
     const hashIndex = href.indexOf("#");
     const pathname = href.slice(0, extIndex);
     const queryString = href
@@ -177,18 +203,40 @@ const common = {
   },
 
   getAndReplaceLocalLinks(
+    currentPath: string,
     html: string,
-    domParser: { parseFromString: any }
+    domParser: DOMParser
   ): [string[], string] {
     const dom = domParser.parseFromString(html, "text/html");
     const result: string[] = [];
-    for (const child of dom.querySelectorAll("a")) {
-      const a = child as { href: string; attributes: Record<string, string> };
-      if (!a.href.match(/^https?:\/\//) && !a.attributes["data-no-render"]) {
-        result.push(a.href);
-        a.href = common.getStaticPath(a.href, true);
+
+    const basePath = (() => {
+      const fields = currentPath.split("/");
+      fields.pop();
+      return fields.join("/");
+    })();
+
+    for (const child of Array.from(dom.querySelectorAll("[src],[href]"))) {
+      let link = child.getAttribute("src") ?? child.getAttribute("href");
+
+      if (!link) continue;
+      if (link.match(/^https?:\/\//)) {
+        continue;
+      }
+      if (child.tagName == "A" && link.includes(".tsx")) {
+        result.push(link);
+      }
+
+      link = common.joinPaths(rootPath, common.getAbsolutePath(basePath, link));
+      link = common.getStaticPath(link, true);
+
+      if (child.hasAttribute("href")) {
+        child.setAttribute("href", link);
+      } else {
+        child.setAttribute("src", link);
       }
     }
+
     return [result, dom.toString()];
   },
 
@@ -269,6 +317,78 @@ const common = {
         "Content-Type": "text/event-stream",
       },
     });
+  },
+
+  getAbsolutePath(basePath: string, targetPath: string) {
+    if (targetPath[0] === "/") return targetPath;
+    if (!basePath.endsWith("/")) basePath += "/";
+    return basePath.endsWith("/")
+      ? basePath + targetPath
+      : basePath + "/" + targetPath;
+  },
+
+  getRelativePath(src: string, dest: string) {
+    if (src[0] !== "/") src = "/" + src;
+    const npaths = src.split("/").filter(Boolean).length - 1;
+    return (
+      (npaths >= 1 ? "../".repeat(npaths) : "") +
+      (dest[0] === "/" ? dest.slice(1) : dest)
+    );
+  },
+
+  // This function is a simplified version of https://deno.land/std@0.196.0/fs/walk.ts
+  // With some changes:
+  // - symlink dirs are always followed
+  // - path of symlink files still point to symlink file
+  // - symlinkPath added to DirEntry
+  // - errors are just logged
+  *walkSync(
+    root: string,
+    maxDepth = 1000
+  ): IterableIterator<Deno.DirEntry & { path: string; symlinkPath?: string }> {
+    if (maxDepth === 0) return;
+
+    {
+      const path = root;
+      const name = basename(path);
+      const info = Deno.lstatSync(path);
+      const symlinkPath = info.isSymlink ? Deno.realPathSync(path) : path;
+      yield {
+        path,
+        name,
+        isFile: info.isFile,
+        isDirectory: info.isSymlink
+          ? Deno.statSync(symlinkPath).isDirectory
+          : info.isDirectory,
+        isSymlink: info.isSymlink,
+        symlinkPath,
+      };
+    }
+
+    let entries;
+    try {
+      entries = Deno.readDirSync(root);
+    } catch (err) {
+      console.log("error while walking directory:", err);
+    }
+    if (!entries) return;
+
+    for (const entry of entries) {
+      const path = join(root, entry.name);
+      let { isSymlink, isDirectory } = entry;
+      let symlinkPath: string | undefined;
+
+      if (isSymlink) {
+        symlinkPath = Deno.realPathSync(path);
+        ({ isSymlink, isDirectory } = Deno.lstatSync(symlinkPath));
+      }
+
+      if (isDirectory) {
+        yield* common.walkSync(path, maxDepth - 1);
+      } else {
+        yield { path, symlinkPath, ...entry };
+      }
+    }
   },
 };
 
@@ -381,10 +501,12 @@ const runner = {
     const files: string[] = [];
     const invalidLinks = new Set<string>();
 
-    for (const entry of walkSync(srcDir)) {
-      if (entry.isDirectory) continue;
-
+    for (const entry of common.walkSync(srcDir)) {
       const destPath = common.getDestPath(entry.path);
+
+      if (entry.isDirectory && !entry.isSymlink) {
+        continue;
+      }
 
       if (!(common.isFileNewer(entry.path, destPath) || noCheck)) {
         console.log("skip", destPath);
@@ -392,19 +514,26 @@ const runner = {
       }
 
       if (extname(entry.path) !== ".tsx") {
-        console.log("copy", destPath);
-        ensureFileSync(destPath);
-        console.log("copy", destPath);
-        Deno.copyFileSync(entry.path, destPath);
+        console.log("copy", entry.path, destPath);
+        if (entry.symlinkPath && entry.isSymlink) {
+          if (existsSync(destPath)) Deno.removeSync(destPath);
+          Deno.symlinkSync(entry.symlinkPath, destPath);
+        } else {
+          ensureFileSync(destPath);
+          Deno.copyFileSync(entry.path, destPath);
+        }
+
         result["copied"]++;
       } else {
         files.push(entry.path);
       }
     }
 
-    const { DOMParser } = await import("https://esm.sh/linkedom@0.14.22");
+    const { DOMParser: LinkedDOMParser } = await import(
+      "https://esm.sh/linkedom@0.14.22"
+    );
 
-    const domParser = new DOMParser();
+    const domParser = new LinkedDOMParser() as DOMParser;
 
     while (files.length > 0) {
       let pathname = files.pop() ?? "";
@@ -420,12 +549,15 @@ const runner = {
 
       const html = await Deno.readTextFile(outputFilename);
       const [links, updatedHtml] = common.getAndReplaceLocalLinks(
+        pathname,
         html,
         domParser
       );
+
       Deno.writeTextFile(outputFilename, updatedHtml);
+
       for (let link of links) {
-        if (!link.startsWith("/")) link = "/" + link;
+        link = common.joinPaths("/", link);
         const filename = srcDir + common.stripQueryParam(link);
         if (!existsSync(filename)) {
           invalidLinks.add(srcDir + link);
@@ -606,6 +738,9 @@ build
 | all the static assets. Note, only newer files will be copied.
 | options:
 |  --force  Force to render and copy all files even if they are older.
+|  --root <path> Rewrite local links to be a subpath of <path>
+     Example, with "--root /docs", a link to /image/test.png will
+     become /docs/image/test.png. Default is /
 
 Examples
 ------------------------------------------------------------------
@@ -650,6 +785,9 @@ export async function main() {
 
   switch (command) {
     case "build": {
+      if (options.root) {
+        rootPath = common.joinPaths("/", options.root);
+      }
       runner.buildAll(!!(options.force_build || options.f));
       break;
     }
