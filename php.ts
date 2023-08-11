@@ -13,6 +13,8 @@ import {
   extname,
   basename,
   join,
+  dirname,
+  relative,
 } from "https://deno.land/std@0.196.0/path/mod.ts";
 
 let rootPath = "/";
@@ -61,7 +63,7 @@ export namespace $ {
 }
 
 const srcDir = "src";
-const buildDir = "build";
+let buildDir = "build";
 
 let fsWatcher: ReturnType<typeof common.createFileWatcher> | null = null;
 
@@ -345,14 +347,19 @@ const common = {
       const path = root;
       const name = basename(path);
       const info = Deno.lstatSync(path);
-      const symlinkPath = info.isSymlink ? Deno.realPathSync(path) : path;
+
+      let { isFile, isDirectory } = info;
+      let symlinkPath: string | undefined = undefined;
+      if (info.isSymlink) {
+        symlinkPath = Deno.realPathSync(path);
+        ({ isFile, isDirectory } = Deno.statSync(symlinkPath));
+      }
+
       yield {
         path,
         name,
-        isFile: info.isFile,
-        isDirectory: info.isSymlink
-          ? Deno.statSync(symlinkPath).isDirectory
-          : info.isDirectory,
+        isFile,
+        isDirectory,
         isSymlink: info.isSymlink,
         symlinkPath,
       };
@@ -373,7 +380,7 @@ const common = {
 
       if (isSymlink) {
         symlinkPath = Deno.realPathSync(path);
-        ({ isSymlink, isDirectory } = Deno.lstatSync(symlinkPath));
+        ({ isDirectory } = Deno.lstatSync(symlinkPath));
       }
 
       if (isDirectory) {
@@ -507,11 +514,13 @@ const runner = {
       }
 
       if (extname(entry.path) !== ".tsx") {
-        console.log("copy", entry.path, destPath);
         if (entry.symlinkPath && entry.isSymlink) {
           if (existsSync(destPath)) Deno.removeSync(destPath);
-          Deno.symlinkSync(entry.symlinkPath, destPath);
+          const symlinkPath = relative(dirname(destPath), entry.symlinkPath);
+          console.log("symlink", destPath, symlinkPath);
+          Deno.symlinkSync(symlinkPath, destPath);
         } else {
+          console.log("copy", entry.path, destPath);
           ensureFileSync(destPath);
           Deno.copyFileSync(entry.path, destPath);
         }
@@ -730,6 +739,8 @@ build
 | description: Create html files from .tsx files and copy
 | all the static assets. Note, only newer files will be copied.
 | options:
+|  --clean Removes the build directory
+|  --buildDir The directory where build files will be placed
 |  --force  Force to render and copy all files even if they are older.
 |  --root <path> Rewrite local links to be a subpath of <path>
      Example, with "--root /docs", a link to /image/test.png will
@@ -770,6 +781,16 @@ export async function main() {
     console.log(cliHelp.trim());
     Deno.exit(0);
   }
+  if (options.buildDir) {
+    buildDir = options.buildDir;
+    if (!relative(srcDir, buildDir).startsWith("../")) {
+      console.log(
+        "error: build directory cannot be inside source directory:",
+        buildDir
+      );
+      Deno.exit(1);
+    }
+  }
 
   let port = parseInt(options.port, 10);
   if (isNaN(port)) port = defaultPort;
@@ -778,6 +799,9 @@ export async function main() {
 
   switch (command) {
     case "build": {
+      if (options.clean && existsSync(buildDir)) {
+        Deno.removeSync(buildDir, { recursive: true });
+      }
       if (options.root) {
         rootPath = common.joinPaths("/", options.root);
       }
@@ -796,7 +820,9 @@ export async function main() {
     }
 
     case "clean": {
-      Deno.removeSync(buildDir, { recursive: true });
+      if (existsSync(buildDir)) {
+        Deno.removeSync(buildDir, { recursive: true });
+      }
       console.log("cleaned", buildDir);
       break;
     }
