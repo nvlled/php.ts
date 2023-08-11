@@ -9,6 +9,7 @@ import {
 import { parse as parseArgs } from "https://deno.land/std@0.196.0/flags/mod.ts";
 import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";
 import { existsSync } from "https://deno.land/std@0.196.0/fs/mod.ts";
+import { ensureDirSync } from "https://deno.land/std@0.196.0/fs/ensure_dir.ts";
 import {
   extname,
   basename,
@@ -20,6 +21,7 @@ import {
 let rootPath = "/";
 const defaultPort = 3000;
 
+const buildMarkerFilename = ".build-php.ts";
 const scriptOutputDelimiter = "~~~~~~~[response]~~~~~~\n`";
 const watchFsPath = ".watch-fs-events.json";
 let pageAutoReload = true;
@@ -390,6 +392,31 @@ const common = {
       }
     }
   },
+
+  initializeBuildDir() {
+    ensureDirSync(buildDir);
+    console.log("marker file", join(buildDir, buildMarkerFilename));
+    Deno.writeTextFileSync(join(buildDir, buildMarkerFilename), "");
+  },
+  cleanBuildDir() {
+    if (!relative(srcDir, buildDir).startsWith("../")) {
+      throw "build dir cannot be inside src directory";
+    }
+
+    let fileCount = 0;
+    if (!existsSync(join(buildDir, buildMarkerFilename))) {
+      for (const _ of Deno.readDirSync(buildDir)) {
+        fileCount++;
+      }
+      if (fileCount > 0) {
+        throw "cannot clean directory, must be a previous build directory";
+      }
+    }
+
+    if (existsSync(buildDir)) {
+      Deno.removeSync(buildDir, { recursive: true });
+    }
+  },
 };
 
 const runner = {
@@ -500,6 +527,8 @@ const runner = {
     const buildSet = new Set<string>();
     const files: string[] = [];
     const invalidLinks = new Set<string>();
+
+    common.initializeBuildDir();
 
     for (const entry of common.walkSync(srcDir)) {
       const destPath = common.getDestPath(entry.path);
@@ -799,8 +828,8 @@ export async function main() {
 
   switch (command) {
     case "build": {
-      if (options.clean && existsSync(buildDir)) {
-        Deno.removeSync(buildDir, { recursive: true });
+      if (options.clean) {
+        common.cleanBuildDir();
       }
       if (options.root) {
         rootPath = common.joinPaths("/", options.root);
@@ -820,9 +849,7 @@ export async function main() {
     }
 
     case "clean": {
-      if (existsSync(buildDir)) {
-        Deno.removeSync(buildDir, { recursive: true });
-      }
+      common.cleanBuildDir();
       console.log("cleaned", buildDir);
       break;
     }
