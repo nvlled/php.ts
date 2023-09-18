@@ -4,7 +4,7 @@ import {
   Fragment,
   h,
   toString as renderToString,
-} from "https://deno.land/x/jsx_to_string@v0.3.0/mod.ts";
+} from "https://deno.land/x/jsx_to_string@v0.5.0/mod.ts";
 
 import { parse as parseArgs } from "https://deno.land/std@0.196.0/flags/mod.ts";
 import { ensureFileSync } from "https://deno.land/std@0.196.0/fs/ensure_file.ts";

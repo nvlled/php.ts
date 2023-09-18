@@ -1,9 +1,18 @@
 import { $ } from "$base/php.ts";
-export function Layout({ children }: { children: JSX.Children }) {
+import { getAllCSS } from "https://deno.land/x/stylesith@v0.1.1/mod.ts";
+
+export function Layout({
+  id,
+  children,
+}: {
+  id?: string;
+  children: JSX.Children;
+}) {
   return (
     <html>
       <head>
         <meta charSet="UTF-8" />
+        {() => <style dangerouslySetInnerHTML={{ __html: getAllCSS() }} />}
         <link rel="stylesheet" href="style.css" />
       </head>
       <body>
@@ -14,7 +23,9 @@ export function Layout({ children }: { children: JSX.Children }) {
           <a href="about.tsx">about</a>
         </div>
         <hr />
-        <div className="contents">{children}</div>
+        <div id={id} className="contents">
+          {children}
+        </div>
       </body>
     </html>
   );

@@ -1,8 +1,8 @@
 import { $ } from "$base/php.ts";
-import { createStyle } from "$base/css.tsx";
 import { Layout } from "./common.tsx";
+import { createCSS } from "https://deno.land/x/stylesith@v0.1.1/mod.ts";
 
-const css = createStyle({ scoped: true });
+const css = createCSS();
 const { request } = $;
 
 // these are optional
@@ -11,18 +11,21 @@ $.response.statusText = "Okay";
 $.response.headers["Content-Type"] = "text/html";
 
 $(
-  <Layout>
+  <Layout id={css.id}>
+    {css`
+      #x .greeting {
+        text-align: center;
+        width: 100%;
+        position: absolute;
+        top: 0;
+        color: #425192;
+      }
+    `}
+    <div>script file: {$.request.src}</div>
+    <div>tailwind block</div>
     <p>Here's an unrelated image.</p>
     <div style={{ position: "relative" }}>
-      <h1
-        style={{
-          textAlign: "center",
-          width: "100%",
-          position: "absolute",
-          top: "0",
-          color: "#425192",
-        }}
-      >
+      <h1 className="greeting">
         {request.data.name && `Hey ${request.data.name}`}
       </h1>
       <img src="images/helck.png" />
@@ -39,22 +42,5 @@ $(
     <a href="index.tsx?name=Kadode">this link will work on build</a>
     <br />
     <br />
-    <div id={css.id}>
-      some blue box &nbsp;
-      <div className="box" />
-      {css`
-        $base {
-          display: flex;
-          align-items: center;
-        }
-        $base .box {
-          width: 50px;
-          height: 50px;
-          background: blue;
-          display: inline-block;
-        }
-      `}
-    </div>
-    <div className="box">{/* this one will not be styled */}</div>
   </Layout>
 );
