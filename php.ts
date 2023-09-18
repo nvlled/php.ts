@@ -40,6 +40,7 @@ export namespace $ {
   export const createFragment = Fragment;
 
   export interface ScriptRequest {
+    src: string;
     method: string;
     url: string;
     body: string;
@@ -53,6 +54,7 @@ export namespace $ {
   }
 
   export const request: ScriptRequest = {
+    src: "",
     method: "",
     url: "",
     body: "",
@@ -119,6 +121,7 @@ const common = {
       );
       const req = JSON.parse(contents) as $.ScriptRequest;
       if (req) {
+        $.request.src = req.src;
         $.request.method = req.method;
         $.request.url = req.url;
         $.request.data = req.data;
@@ -661,7 +664,7 @@ const runner = {
       async (req) => {
         console.log(req.method, req.url);
         try {
-          const pathname = new URL(req.url).pathname;
+          let pathname = new URL(req.url).pathname;
           if (pathname === "/" + watchFsPath && pageAutoReload) {
             return common.createFsEventResponse();
           }
@@ -670,6 +673,7 @@ const runner = {
           const isDir = (await Deno.stat(filename)).isDirectory;
           if (pathname === "/" || isDir) {
             filename = common.joinPaths(srcDir, pathname, "index.tsx");
+            pathname = common.joinPaths(pathname, "index.tsx");
           }
 
           if (!filename.endsWith(".html") && !filename.endsWith(".tsx")) {
@@ -680,6 +684,7 @@ const runner = {
           let { out, err, scriptResponse } = await runner.renderToString(
             filename,
             {
+              src: pathname,
               method: req.method,
               url: req.url,
               data: common.getRequestData(req),
